@@ -62,6 +62,7 @@ class LeggedRobotCfg(BaseConfig):
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
         terrain_proportions = [0.1, 0.1, 0.35, 0.25, 0.2]
+        # terrain_proportions = [0.1, 0.75, 0.35, 0.25, 0.2]
         # trimesh only:
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
 
@@ -96,6 +97,25 @@ class LeggedRobotCfg(BaseConfig):
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
 
+    class perception:
+        measure_heights = False
+        compute_heights = False
+        measure_frictions = False
+        compute_frictions = False
+        measure_roughnesses = False
+        compute_roughnesses = False
+
+        camera_names = ["front", "left", "right", "bottom", "rear"]
+        camera_poses = [[0.3, 0, 0], [0, 0.15, 0], [0, -0.15, 0], [0.1, 0, -0.1], [-0.2, 0, -0.1]]
+        camera_rpys = [[0.0, 0 , 0], [0, 0, 3.14 / 2], [0, 0, -3.14 / 2], [0, -3.14 / 2, 0],
+                       [0, -3.14 / 2, 0]]
+        compute_depth = False
+        compute_rgb = False
+        compute_segmentation = False
+
+        image_height = 32
+        image_width = 32
+        image_horizontal_fov = 110.0 # 110 degrees
     class asset:
         file = ""
         name = "legged_robot"  # actor name
@@ -134,16 +154,17 @@ class LeggedRobotCfg(BaseConfig):
             tracking_ang_vel = 0.5
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
-            orientation = -0.
+            orientation = -0.0
             torques = -0.00001
             dof_vel = -0.
             dof_acc = -2.5e-7
             base_height = -0. 
             feet_air_time =  1.0
             collision = -1.
-            feet_stumble = -0.0 
+            stumble = -0.01
             action_rate = -0.01
             stand_still = -0.
+            feet_step = -0.0
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
@@ -242,3 +263,4 @@ class LeggedRobotCfgPPO(BaseConfig):
         load_run = -1 # -1 = last run
         checkpoint = -1 # -1 = last saved model
         resume_path = None # updated from load_run and chkpt
+
