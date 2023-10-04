@@ -47,6 +47,7 @@ from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
+import torchvision
 
 class LeggedRobot(BaseTask):
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
@@ -69,11 +70,14 @@ class LeggedRobot(BaseTask):
         self.init_done = False
         self._parse_cfg(self.cfg)
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
-
+        self.resize_transform = torchvision.transforms.Resize((self.cfg.perception.resized[1], self.cfg.perception.resized[0]), 
+                                                              interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
+        
         if not self.headless:
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
         self._init_buffers()
         self._prepare_reward_function()
+        self.global_counter = 0
         self.init_done = True
 
     def step(self, actions):
@@ -84,6 +88,7 @@ class LeggedRobot(BaseTask):
         """
         clip_actions = self.cfg.normalization.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
+        self.global_counter += 1
         # step physics and render each frame
         self.render()
         for _ in range(self.cfg.control.decimation):
@@ -101,6 +106,8 @@ class LeggedRobot(BaseTask):
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
+        if self.cfg.perception.use_camera and self.global_counter % self.cfg.perception.update_interval == 0:
+            self.extras["depth"] = self.depth_buffer[:, -1] 
         return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
 
     def post_physics_step(self):
@@ -128,6 +135,8 @@ class LeggedRobot(BaseTask):
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         # print (env_ids)
         self.reset_idx(env_ids)
+        self.update_depth_buffer()
+
         self.compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
 
         self.last_actions[:] = self.actions[:]
@@ -136,6 +145,50 @@ class LeggedRobot(BaseTask):
 
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
             self._draw_debug_vis()
+    def normalize_depth_image(self, depth_image):
+        depth_image = depth_image * -1
+        depth_image = (depth_image - self.cfg.perception.near_clip) / (self.cfg.perception.far_clip - self.cfg.perception.near_clip)  - 0.5
+        return depth_image
+    
+    def process_depth_image(self, depth_image, env_id):
+        # These operations are replicated on the hardware
+        depth_image = self.crop_depth_image(depth_image)
+        depth_image += self.cfg.perception.dis_noise * 2 * (torch.rand(1)-0.5)[0]
+        depth_image = torch.clip(depth_image, -self.cfg.perception.far_clip, -self.cfg.perception.near_clip)
+        depth_image = self.resize_transform(depth_image[None, :]).squeeze()
+        depth_image = self.normalize_depth_image(depth_image)
+        return depth_image
+
+    def crop_depth_image(self, depth_image):
+        # crop 30 pixels from the left and right and and 20 pixels from bottom and return croped image
+        return depth_image[:-2, 4:-4]
+
+    def update_depth_buffer(self):
+        if not self.cfg.perception.use_camera:
+            return
+
+        if self.global_counter % self.cfg.perception.update_interval != 0:
+            return
+        self.gym.step_graphics(self.sim) # required to render in headless mode
+        self.gym.render_all_camera_sensors(self.sim)
+        self.gym.start_access_image_tensors(self.sim)
+
+        for i in range(self.num_envs):
+            depth_image_ = self.gym.get_camera_image_gpu_tensor(self.sim, 
+                                                                self.envs[i], 
+                                                                self.cam_handles[i],
+                                                                gymapi.IMAGE_DEPTH)
+            
+            depth_image = gymtorch.wrap_tensor(depth_image_)
+            depth_image = self.process_depth_image(depth_image, i)
+            
+            init_flag = self.episode_length_buf <= 1
+            if init_flag[i]:
+                self.depth_buffer[i] = torch.stack([depth_image] * self.cfg.perception.buffer_len, dim=0)
+            else:
+                self.depth_buffer[i] = torch.cat([self.depth_buffer[i, 1:], depth_image.to(self.device).unsqueeze(0)], dim=0)
+
+        self.gym.end_access_image_tensors(self.sim)
 
     def check_termination(self):
         """ Check if environments need to be reset
@@ -231,11 +284,14 @@ class LeggedRobot(BaseTask):
                                     ),dim=-1)
         # add perceptive inputs if not blind
         if self.cfg.perception.compute_segmentation or self.cfg.perception.compute_rgb or self.cfg.perception.compute_depth:
-            depth_image = self.get_depth_images(env_ids = None)
+            pass
+            # depth_image = self.get_depth_images(env_ids = None)
             # seg_image = self.get_segmentation_images(env_ids = None)
-            depth_image['front'] = depth_image['front'].reshape(depth_image['front'].shape[0], depth_image['front'].shape[1]**2)
+            # depth_image['front'] = depth_image['front'].reshape(depth_image['front'].shape[0], depth_image['front'].shape[1]**2)
             # depth_image['bottom'] = depth_image['bottom'].reshape(depth_image['bottom'].shape[0], depth_image['bottom'].shape[1]**2)
-            self.obs_buf = torch.cat((self.obs_buf,depth_image['front']), dim=-1)
+            # depth_image = self.depth_buffer.reshape(self.depth_buffer.shape[0],self.depth_buffer.shape[2]*self.depth_buffer.shape[-1])
+            # self.obs_buf = torch.cat((self.obs_buf,depth_image), dim=-1)
+            # import pdb;pdb.set_trace()
             # self.obs_buf = torch.cat((self.obs_buf,depth_image['bottom']), dim=-1)
             # print(self.obs_buf.shape)
             # plt.imshow(self.obs_buf[:,48:].reshape((32,32)).cpu())
@@ -269,6 +325,8 @@ class LeggedRobot(BaseTask):
         """ Creates simulation, terrain and evironments
         """
         self.up_axis_idx = 2 # 2 for z, 1 for y -> adapt gravity accordingly
+        if self.cfg.perception.use_camera:
+            self.graphics_device_id = self.sim_device_id 
         self.sim = self.gym.create_sim(self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
         mesh_type = self.cfg.terrain.mesh_type
         if mesh_type in ['heightfield', 'trimesh']:
@@ -581,7 +639,11 @@ class LeggedRobot(BaseTask):
                 if self.cfg.control.control_type in ["P", "V"]:
                     print(f"PD gain of joint {name} were not defined, setting them to zero")
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
-
+        if self.cfg.perception.use_camera:
+            self.depth_buffer = torch.zeros(self.num_envs,  
+                                            self.cfg.perception.buffer_len, 
+                                            self.cfg.perception.resized[1], 
+                                            self.cfg.perception.resized[0]).to(self.device)
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.
@@ -713,6 +775,7 @@ class LeggedRobot(BaseTask):
         env_lower = gymapi.Vec3(0., 0., 0.)
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
+        self.cam_handles=[]
         self.envs = []
         for i in range(self.num_envs):
             # create env instance
@@ -732,6 +795,8 @@ class LeggedRobot(BaseTask):
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
 
+            self.attach_camera(i, env_handle, actor_handle)
+
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
@@ -743,8 +808,8 @@ class LeggedRobot(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
-        if self.cfg.perception.compute_segmentation or self.cfg.perception.compute_rgb or self.cfg.perception.compute_depth:
-            self.initialize_cameras(range(self.num_envs))
+        # if self.cfg.perception.compute_segmentation or self.cfg.perception.compute_rgb or self.cfg.perception.compute_depth:
+        #     self.initialize_cameras(range(self.num_envs))
             
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
@@ -987,32 +1052,56 @@ class LeggedRobot(BaseTask):
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
     
 
-    def get_depth_images(self, env_ids):
-        depth_images = {}
-        # print(self.cfg.perception.camera_names)
-        for camera_name in self.cfg.perception.camera_names:
-            depth_images[camera_name] = self.camera_sensors[camera_name].get_depth_images(env_ids)
-        return depth_images
+    # def get_depth_images(self, env_ids):
+    #     depth_images = {}
+    #     # print(self.cfg.perception.camera_names)
+    #     for camera_name in self.cfg.perception.camera_names:
+    #         depth_images[camera_name] = self.camera_sensors[camera_name].get_depth_images(env_ids)
+    #     return depth_images
     
-    def get_segmentation_images(self, env_ids):
-        segmentation_images = []
-        for camera_name in self.cfg.perception.camera_names:
-            segmentation_images = self.camera_sensors[camera_name].get_segmentation_images(env_ids)
-        return segmentation_images
+    # def get_segmentation_images(self, env_ids):
+    #     segmentation_images = []
+    #     for camera_name in self.cfg.perception.camera_names:
+    #         segmentation_images = self.camera_sensors[camera_name].get_segmentation_images(env_ids)
+    #     return segmentation_images
 
-    def get_rgb_images(self, env_ids):
-        rgb_images = {}
-        for camera_name in self.cfg.perception.camera_names:
-            rgb_images[camera_name] = self.camera_sensors[camera_name].get_rgb_images(env_ids)
-        return rgb_images
-    def initialize_cameras(self, env_ids):
-        self.cams = {label: [] for label in self.cfg.perception.camera_names}
-        self.camera_sensors = {}
+    # def get_rgb_images(self, env_ids):
+    #     rgb_images = {}
+    #     for camera_name in self.cfg.perception.camera_names:
+    #         rgb_images[camera_name] = self.camera_sensors[camera_name].get_rgb_images(env_ids)
+    #     return rgb_images
+    # def initialize_cameras(self, env_ids):
+    #     self.cams = {label: [] for label in self.cfg.perception.camera_names}
+    #     self.camera_sensors = {}
 
-        from legged_gym.sensors.attached_camera_sensor import AttachedCameraSensor
+    #     from legged_gym.sensors.attached_camera_sensor import AttachedCameraSensor
 
-        for camera_label, camera_pose, camera_rpy in zip(self.cfg.perception.camera_names,
-                                                             self.cfg.perception.camera_poses,
-                                                             self.cfg.perception.camera_rpys):
-            self.camera_sensors[camera_label] = AttachedCameraSensor(self)
-            self.camera_sensors[camera_label].initialize(camera_label, camera_pose, camera_rpy, env_ids=env_ids)
+    #     for camera_label, camera_pose, camera_rpy in zip(self.cfg.perception.camera_names,
+    #                                                          self.cfg.perception.camera_poses,
+    #                                                          self.cfg.perception.camera_rpys):
+    #         self.camera_sensors[camera_label] = AttachedCameraSensor(self)
+    #         self.camera_sensors[camera_label].initialize(camera_label, camera_pose, camera_rpy, env_ids=env_ids)
+
+    def attach_camera(self, i, env_handle, actor_handle):
+        if self.cfg.perception.use_camera:
+            config = self.cfg.perception
+            camera_props = gymapi.CameraProperties()
+            camera_props.width = self.cfg.perception.original[0]
+            camera_props.height = self.cfg.perception.original[1]
+            camera_props.enable_tensors = True
+            camera_horizontal_fov = self.cfg.perception.horizontal_fov 
+            camera_props.horizontal_fov = camera_horizontal_fov
+
+            camera_handle = self.gym.create_camera_sensor(env_handle, camera_props)
+            self.cam_handles.append(camera_handle)
+            
+            local_transform = gymapi.Transform()
+            
+            camera_position = np.copy(config.position)
+            camera_angle = np.random.uniform(config.angle[0], config.angle[1])
+            
+            local_transform.p = gymapi.Vec3(*camera_position)
+            local_transform.r = gymapi.Quat.from_euler_zyx(0, np.radians(camera_angle), 0)
+            root_handle = self.gym.get_actor_root_rigid_body_handle(env_handle, actor_handle)
+            
+            self.gym.attach_camera_to_body(camera_handle, env_handle, root_handle, local_transform, gymapi.FOLLOW_TRANSFORM)

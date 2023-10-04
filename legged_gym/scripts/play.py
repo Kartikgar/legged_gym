@@ -80,7 +80,7 @@ def play(args):
         # all_actions.append(actions)
         # all_actions = np.array(all_actions)
         # torch.save(all_actions,'all_actions.py')
-        torch.save(policy, '/home/kartik/legged_gym/legged_gym/scripts/go1_30_1.5_flat_height_reward.pth')
+        # torch.save(policy, '/home/kartik/legged_gym/legged_gym/scripts/rnn_gru_1.pth')
         # import pdb;pdb.set_trace()
         obs, _, rews, dones, infos = env.step(actions.detach())
         if RECORD_FRAMES:
@@ -120,7 +120,7 @@ def play(args):
             logger.print_rewards()
 
 if __name__ == '__main__':
-    EXPORT_POLICY = True
+    EXPORT_POLICY = False
     RECORD_FRAMES = True
     MOVE_CAMERA = False
     args = get_args()

@@ -50,10 +50,10 @@ class GO1RoughCfg( LeggedRobotCfg ):
             'RR_calf_joint': -1.5,    # [rad]
         }
     class terrain( LeggedRobotCfg.terrain ):
-        mesh_type = 'plane'
+        mesh_type = 'trimesh'
         measure_heights = False
         curriculum=True
-        terrain_proportions = [0.1, 0.7, 0.1, 0.1, 0.2]
+        # terrain_proportions = [0.1, 0.7, 0.1, 0.1, 0.2]
     class commands:
         curriculum = False
         max_curriculum = 1.
@@ -61,7 +61,7 @@ class GO1RoughCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 1.0] # min max [m/s]
+            lin_vel_x = [0.0, 1.0] # min max [m/s]
             lin_vel_y = [-0.0, 0.0]   # min max [m/s]
             ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
@@ -71,8 +71,8 @@ class GO1RoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 30.}  # [N*m/rad]
-        damping = {'joint': 1.5}     # [N*m*s/rad]
+        stiffness = {'joint': 20.}  # [N*m/rad]
+        damping = {'joint': .5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -93,14 +93,15 @@ class GO1RoughCfg( LeggedRobotCfg ):
         class scales( LeggedRobotCfg.rewards.scales ):
             torques = -0.0002
             dof_pos_limits = -10.0
-            feet_step = -1.0
-            stumble = -1.0
+            feet_step = 0.0
+            stumble = -0.1
 
     class perception(LeggedRobotCfg.perception):
-        compute_depth=False
+        compute_depth=True
         compute_segmentation=False
+        use_camera = True
         # camera_names=['front', 'bottom']
-        camera_names=['front']
+        # camera_names=['front']
         # camera_poses = [[0.3, 0, 0], [0, 0.15, 0], [0, -0.15, 0], [0.1, 0, -0.1], [-0.2, 0, -0.1]]
         # camera_rpys = [[0.0, 0 , 0], [0, 0, 3.14 / 2], [0, 0, -3.14 / 2], [0, -3.14 / 2, 0],
         #                [0, -3.14 / 2, 0]]
@@ -108,10 +109,13 @@ class GO1RoughCfg( LeggedRobotCfg ):
         # camera_rpys = [[0.0, 0 , 0],[0,-3.14/2,0]]
         camera_poses= [[0.3, 0, 0]]
         camera_rpys = [[0.0, 0 , 0]]
-        image_height=32
-        image_width=32
+        resized = (32, 32)
+        # image_height=32
+        # image_width=32
 class GO1RoughCfgPPO( LeggedRobotCfgPPO ):
-
+    class policy(LeggedRobotCfgPPO.policy):
+        rnn_type = 'lstm'
+        rnn_hidden_size = 256
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
         policy_class_name = 'ActorCritic'

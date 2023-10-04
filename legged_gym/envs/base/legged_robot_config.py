@@ -113,9 +113,31 @@ class LeggedRobotCfg(BaseConfig):
         compute_rgb = False
         compute_segmentation = False
 
-        image_height = 32
-        image_width = 32
-        image_horizontal_fov = 110.0 # 110 degrees
+        # image_height = 32
+        # image_width = 32
+        # image_horizontal_fov = 110.0 # 110 degrees
+        use_camera = False
+        # camera_num_envs = 192
+        camera_terrain_num_rows = 10
+        camera_terrain_num_cols = 20
+
+        position = [0.27, 0, 0.03]  # front camera
+        angle = [-5, 5]  # positive pitch down
+
+        update_interval = 5  # 5 works without retraining, 8 worse
+
+        original = (106, 60)
+        resized = (87, 58)
+        horizontal_fov = 87
+        buffer_len = 1
+        
+        near_clip = 0
+        far_clip = 2
+        dis_noise = 0.0
+        
+        scale = 1
+        invert = True
+
     class asset:
         file = ""
         name = "legged_robot"  # actor name
@@ -229,9 +251,9 @@ class LeggedRobotCfgPPO(BaseConfig):
         critic_hidden_dims = [512, 256, 128]
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
         # only for 'ActorCriticRecurrent':
-        # rnn_type = 'lstm'
-        # rnn_hidden_size = 512
-        # rnn_num_layers = 1
+        rnn_type = 'lstm'
+        rnn_hidden_size = 512
+        rnn_num_layers = 1
         
     class algorithm:
         # training params
