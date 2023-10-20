@@ -53,7 +53,7 @@ class OnPolicyRunner:
                  env: VecEnv,
                  train_cfg,
                  log_dir=None,
-                 init_wandb=True,
+                 init_wandb=False,
                  device='cpu', **kwargs):
 
         self.cfg=train_cfg["runner"]
@@ -204,6 +204,10 @@ class OnPolicyRunner:
             learn_time = stop - start
             if self.log_dir is not None:
                 self.log(locals())
+            if os.path.exists(self.log_dir):
+                pass
+            else: os.mkdir(self.log_dir)
+            
             if it < 2500:
                 if it % self.save_interval == 0:
                     self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
@@ -357,7 +361,7 @@ class OnPolicyRunner:
             wandb_dict['Train/mean_reward'] = statistics.mean(locs['rewbuffer'])
             wandb_dict['Train/mean_episode_length'] = statistics.mean(locs['lenbuffer'])
         
-        wandb.log(wandb_dict, step=locs['it'])
+        # wandb.log(wandb_dict, step=locs['it'])
 
         str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 
@@ -436,7 +440,7 @@ class OnPolicyRunner:
             # wandb_dict['Train/mean_reward/time', statistics.mean(locs['rewbuffer']), self.tot_time)
             # wandb_dict['Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
 
-        wandb.log(wandb_dict, step=locs['it'])
+        # wandb.log(wandb_dict, step=locs['it'])
 
         str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 

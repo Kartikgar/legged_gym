@@ -35,7 +35,7 @@ from datetime import datetime
 import isaacgym
 from legged_gym.envs import *
 from legged_gym.utils import get_args
-from legged_gym.utils.task_registry import task_registry
+from legged_gym.utils.task_registry_rma import task_registry
 import torch
 
 def train(args):

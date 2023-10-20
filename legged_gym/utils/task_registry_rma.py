@@ -28,6 +28,7 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
+from copy import deepcopy
 import os
 from datetime import datetime
 from typing import Tuple
@@ -35,7 +36,7 @@ import torch
 import numpy as np
 
 from rsl_rl.env import VecEnv
-from rsl_rl.runners.on_policy_runner import OnPolicyRunner
+from rsl_rl.runners.on_policy_runner_rma import OnPolicyRunner
 
 from legged_gym import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR
 from .helpers import get_args, update_cfg_from_args, class_to_dict, get_load_path, set_seed, parse_sim_params
@@ -102,7 +103,7 @@ class TaskRegistry():
                             headless=args.headless)
         return env, env_cfg
 
-    def make_alg_runner(self, env, name=None, args=None, train_cfg=None, log_root="default") -> Tuple[OnPolicyRunner, LeggedRobotCfgPPO]:
+    def make_alg_runner(self, env, name=None, args=None, train_cfg=None, init_wandb=False, log_root="default", **kwargs) -> Tuple[OnPolicyRunner, LeggedRobotCfgPPO]:
         """ Creates the training algorithm  either from a registered namme or from the provided config file.
 
         Args:
@@ -135,25 +136,43 @@ class TaskRegistry():
                 print(f"'train_cfg' provided -> Ignoring 'name={name}'")
         # override cfg from args (if specified)
         _, train_cfg = update_cfg_from_args(None, train_cfg, args)
-
+        
         if log_root=="default":
-            log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
+            # log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
+            log_root = os.path.join('/scratch/kartik/legged_gym/', 'logs', train_cfg.runner.experiment_name)
             log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
         elif log_root is None:
             log_dir = None
         else:
-            log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
-        
+            log_dir = log_root#os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
+        print("log_dir:", log_dir)
         train_cfg_dict = class_to_dict(train_cfg)
-        runner = OnPolicyRunner(env, train_cfg_dict, log_dir, device=args.rl_device)
+        runner = OnPolicyRunner(env, 
+                                train_cfg_dict, 
+                                log_dir, 
+                                init_wandb=init_wandb,
+                                device=args.rl_device, **kwargs)
         #save resume path before creating a new log_dir
         resume = train_cfg.runner.resume
+        if args.resumeid:
+            # log_root = LEGGED_GYM_ROOT_DIR + f"/logs/{args.proj_name}/" + args.resumeid
+            log_root = '/scratch/kartik/legged_gym/' + f"/logs/{args.proj_name}/" + args.resumeid
+
+            resume = True
         if resume:
             # load previously trained model
+            print(log_root)
+            print(train_cfg.runner.load_run)
+            # load_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', "rough_a1", train_cfg.runner.load_run)
             resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
-            print(f"Loading model from: {resume_path}")
             runner.load(resume_path)
-        return runner, train_cfg
+            if not train_cfg.policy.continue_from_last_std:
+                runner.alg.actor_critic.reset_std(train_cfg.policy.init_noise_std, 12, device=runner.device)
+
+        if "return_log_dir" in kwargs:
+            return runner, train_cfg, os.path.dirname(resume_path)
+        else:    
+            return runner, train_cfg
 
 # make global task registry
 task_registry = TaskRegistry()

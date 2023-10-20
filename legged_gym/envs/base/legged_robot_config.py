@@ -33,12 +33,18 @@ from .base_config import BaseConfig
 class LeggedRobotCfg(BaseConfig):
     class env:
         num_envs = 4096
-        num_observations = 235
+        n_scan = 187
+        n_priv = 3+3+3
+        n_priv_latent = 4+1+12+12
+        n_proprio = 48
+        history_len = 10
+        num_observations = n_proprio + n_scan + history_len*n_proprio + n_priv_latent + n_priv
         num_privileged_obs = None # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
         num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
         episode_length_s = 20 # episode length in seconds
+        history_encoding = True
 
     class terrain:
         mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
@@ -58,6 +64,8 @@ class LeggedRobotCfg(BaseConfig):
         max_init_terrain_level = 5 # starting curriculum state
         terrain_length = 8.
         terrain_width = 8.
+        height = [0.02, 0.06]
+        downsampled_scale = 0.075
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
@@ -68,7 +76,9 @@ class LeggedRobotCfg(BaseConfig):
 
     class commands:
         curriculum = False
+        reindex = False
         max_curriculum = 1.
+        vel_terrain = 0.35
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
@@ -162,12 +172,23 @@ class LeggedRobotCfg(BaseConfig):
 
     class domain_rand:
         randomize_friction = True
-        friction_range = [0.5, 1.25]
-        randomize_base_mass = False
-        added_mass_range = [-1., 1.]
+        friction_range = [0.5, 2.25]
+        randomize_base_mass = True
+        added_mass_range = [0.,3.0]
+        randomize_base_com = True
+        added_com_range = [-0.2, 0.2]
         push_robots = True
         push_interval_s = 15
         max_push_vel_xy = 1.
+        randomize_motor = True
+        motor_strength_range = [0.8, 1.2]
+
+        delay_update_global_steps = 24 * 8000
+        action_delay = False
+        action_curr_step = [1, 1]
+        action_curr_step_scratch = [0, 1]
+        action_delay_view = 1
+        action_buf_len = 8  
 
     class rewards:
         class scales:
@@ -187,6 +208,14 @@ class LeggedRobotCfg(BaseConfig):
             action_rate = -0.01
             stand_still = -0.
             feet_step = -0.0
+            work = -0.0001
+            forward_vel = 0
+            angular_vel =0
+            feet_drag_penalty = -0.0001
+            command_tracking = 7
+            alive = 1
+            feet_contact_forces= -1
+            hip_pos = -0.5
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
@@ -247,13 +276,18 @@ class LeggedRobotCfgPPO(BaseConfig):
     runner_class_name = 'OnPolicyRunner'
     class policy:
         init_noise_std = 1.0
+        continue_from_last_std = True
+        scan_encoder_dims = [128, 64, 32]
         actor_hidden_dims = [512, 256, 128]
         critic_hidden_dims = [512, 256, 128]
+        priv_encoder_dims = [64, 20]
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
         # only for 'ActorCriticRecurrent':
         rnn_type = 'lstm'
         rnn_hidden_size = 512
         rnn_num_layers = 1
+
+        tanh_encoder_output = False
         
     class algorithm:
         # training params
@@ -269,6 +303,26 @@ class LeggedRobotCfgPPO(BaseConfig):
         lam = 0.95
         desired_kl = 0.01
         max_grad_norm = 1.
+        # dagger params
+        dagger_update_freq = 20
+        priv_reg_coef_schedual = [0, 0.1, 2000, 3000]
+        priv_reg_coef_schedual_resume = [0, 0.1, 0, 1]
+
+    class depth_encoder:
+        if_depth = LeggedRobotCfg.perception.use_camera
+        depth_shape = LeggedRobotCfg.perception.resized
+        buffer_len = LeggedRobotCfg.perception.buffer_len
+        hidden_dims = 512
+        learning_rate = 1.e-3
+        num_steps_per_env = LeggedRobotCfg.perception.update_interval * 24
+
+    class estimator:
+        train_with_estimated_states = True
+        learning_rate = 1.e-4
+        hidden_dims = [128, 64]
+        priv_states_dim = LeggedRobotCfg.env.n_priv
+        num_prop = LeggedRobotCfg.env.n_proprio
+        num_scan = LeggedRobotCfg.env.n_scan
 
     class runner:
         policy_class_name = 'ActorCritic'

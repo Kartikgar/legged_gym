@@ -44,6 +44,8 @@ from .go1.go1_config import GO1RoughCfg, GO1RoughCfgPPO
 import os
 
 from legged_gym.utils.task_registry import task_registry
+from legged_gym.utils.task_registry_rma import task_registry as task_registry_rma
+
 
 task_registry.register( "anymal_c_rough", Anymal, AnymalCRoughCfg(), AnymalCRoughCfgPPO() )
 task_registry.register( "anymal_c_flat", Anymal, AnymalCFlatCfg(), AnymalCFlatCfgPPO() )
@@ -52,3 +54,11 @@ task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO() )
 task_registry.register( "go1", LeggedRobot, GO1RoughCfg(), GO1RoughCfgPPO() )
 task_registry.register( "stoch3", LeggedRobot, Stoch3RoughCfg(), Stoch3RoughCfgPPO() )
 task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )
+
+task_registry_rma.register( "anymal_c_rough", Anymal, AnymalCRoughCfg(), AnymalCRoughCfgPPO() )
+task_registry_rma.register( "anymal_c_flat", Anymal, AnymalCFlatCfg(), AnymalCFlatCfgPPO() )
+task_registry_rma.register( "anymal_b", Anymal, AnymalBRoughCfg(), AnymalBRoughCfgPPO() )
+task_registry_rma.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO() )
+task_registry_rma.register( "go1", LeggedRobot, GO1RoughCfg(), GO1RoughCfgPPO() )
+task_registry_rma.register( "stoch3", LeggedRobot, Stoch3RoughCfg(), Stoch3RoughCfgPPO() )
+task_registry_rma.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )

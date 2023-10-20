@@ -83,6 +83,7 @@ class StateHistoryEncoder(nn.Module):
         projection = self.encoder(obs.reshape([nd * T, -1])) # do projection for n_proprio -> 32
         output = self.conv_layers(projection.reshape([nd, T, -1]).permute((0, 2, 1)))
         output = self.linear_output(output)
+        # print("i am used")
         return output
 
 class Actor(nn.Module):
@@ -176,6 +177,7 @@ class Actor(nn.Module):
             backbone_output = self.actor_backbone(backbone_input)
             return backbone_output
         else:
+            # import pdb;pdb.set_trace()
             if self.if_scan_encode:
                 obs_scan = obs[:, self.num_prop:self.num_prop + self.num_scan]
                 if scandots_latent is None:
@@ -195,6 +197,7 @@ class Actor(nn.Module):
             return backbone_output
     
     def infer_priv_latent(self, obs):
+        # print("i am used")
         priv = obs[:, self.num_prop + self.num_scan + self.num_priv_explicit: self.num_prop + self.num_scan + self.num_priv_explicit + self.num_priv_latent]
         return self.priv_encoder(priv)
     
@@ -294,6 +297,7 @@ class ActorCriticRMA(nn.Module):
             actions_mean = self.actor(observations, hist_encoding, eval, scandots_latent)
             return actions_mean
         else:
+            import pdb;pdb.set_trace()
             actions_mean, latent_hist, latent_priv = self.actor(observations, hist_encoding, eval=True)
             return actions_mean, latent_hist, latent_priv
 

@@ -37,6 +37,7 @@ class Estimator(nn.Module):
     
     def inference(self, input):
         with torch.no_grad():
+            print("i am used")
             return self.estimator(input)
 
 class Discriminator(nn.Module):
